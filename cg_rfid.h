@@ -7,7 +7,6 @@ using namespace esphome::switch_;
 #define CG_RFID_H
 
 static const char *const TAG = "cg_rfid";
-//#define DEBUG
 
 namespace esphome {
     class CG_RFID : public PollingComponent {
@@ -20,21 +19,35 @@ namespace esphome {
         void update() override;
         void dump_config() override;
         void reset();
+        uint8_t get_remaining_cycles();
     
     private:
         ESPPreferenceObject storage = global_preferences->make_preference<uint8_t>(fnv1_hash(TAG), true);
 
+        enum Constants {
+            REG = 0x00,
+            FRAME = 0x01,
+            READ_NODE = 0x06,
+            SELECT_NODE = 0x0E,
+            READ_UID = 0x0B,
+            READ_BLOCK = 0x08,
+            WRITE_BLOCK = 0x09,
+            AUTHENTICATE = 0x0A,
+            RESET_TO_INVENTORY = 0x0C,
+            COMPLETION = 0x0F,
+
+            I2C0_SDA = 5,
+            I2C0_SCL = 3,
+            I2C1_SDA = 12,
+            I2C1_SCL = 11,
+            I2C0_FREQUENCY = 100000,
+            I2C1_FREQUENCY = 100000,
+            I2C_ADDRESS = 80
+        };    
+
+        uint8_t refresh_step = 0;
+        bool write_required = false;
         uint8_t cycle_counter = 0;
-
-        const int I2C0_SDA = 5;
-        const int I2C0_SCL = 3;
-
-        const int I2C1_SDA = 12;
-        const int I2C1_SCL = 11;
-
-        const uint32_t I2C_FREQUENCY = 100000;
-
-        const uint8_t I2C_ADDRESS = 64; // 80(7 bits) with a R/W bit appended
 
         byte* response;
         byte* read_register = new byte[0x10];
@@ -57,6 +70,10 @@ namespace esphome {
         byte NODE_ID_RESPONSE[2] = { 0x01, 0x3C };
         byte UID_RESPONSE[9] = { 0x08, 0xA3, 0x6E, 0x6A, 0x73, 0x09, 0x33, 0x02, 0xD0 };
     
+        byte ORIG_BLOCKS[16][5];
+        byte ORIG_NODE_ID_RESPONSE[2];
+        byte ORIG_UID_RESPONSE[9];
+    
         static CG_RFID *instance_; 
         static void handle_request_event() {
             instance_->request_event();
@@ -66,8 +83,19 @@ namespace esphome {
             instance_->receive_event(length);
         }
 
+        bool is_bypass_active();
         void receive_event(int length);
         void request_event();
+        void cr14_writereg(byte value);
+        void cr14_readframe(byte *data, uint8_t size);
+        void cr14_writeframe(byte *data, uint8_t size);
+        void rfid_reset();
+        void read_node_id();
+        void select_node();
+        void read_uid();
+        void read_blocks(uint8_t offset, uint8_t len);
+        void write_blocks();
+        void check_response(uint8_t err);
     };
 }
 #endif

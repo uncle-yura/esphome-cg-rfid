@@ -60,6 +60,7 @@ void CG_RFID::update() {
                         );
                         break;
                     }
+                    refresh_step --; // repeat the block write step
                     write_required --;
                     ESP_LOGI(
                         TAG,

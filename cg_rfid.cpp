@@ -34,6 +34,7 @@ void CG_RFID::update() {
     }
 
     if (bpswitch->state) {
+        unsigned long time = millis();
         switch(refresh_step) {
             case 1:
                 rfid_reset();
@@ -48,9 +49,24 @@ void CG_RFID::update() {
                 break;
             case 4:
                 if(write_required) {
-                    write_blocks();
-                    write_required = false;
-                    ESP_LOGI(TAG, "the number of cycles is written to the cartridge, cycle counter: %d", ORIG_BLOCKS[5][1]);
+                    byte addr = write_required == 2 ? 0x05 : 0x06;
+                    write_blocks(addr);
+                    if(refresh_step == 0) {
+                        ESP_LOGI(
+                            TAG,
+                            "write error, cycle counter %d: %d",
+                            addr,
+                            ORIG_BLOCKS[addr][1]
+                        );
+                        break;
+                    }
+                    write_required --;
+                    ESP_LOGI(
+                        TAG,
+                        "the number of cycles is written to the cartridge, cycle counter %d: %d",
+                        addr,
+                        ORIG_BLOCKS[addr][1]
+                    );
                 }
                 break;
             case 5:
@@ -68,10 +84,23 @@ void CG_RFID::update() {
             case 20:
                 refresh_step = 0;
                 break;
+            case 80:
+                refresh_step = 0;
+                break;
             default:
                 break;
         }
         refresh_step++;
+        if(millis() - time > 30) {
+            ESP_LOGI(TAG, "looks like the i2c bus hangs, %d ms", time - millis());
+            refresh_step = 0;
+            delay(2);
+            Wire1.end();
+            delay(2);
+            Wire1.begin(I2C1_SDA, I2C1_SCL, I2C1_FREQUENCY);
+            Wire1.setTimeOut(10);
+            delay(2);
+        }
     } else {
         refresh_step = 0;
     }
@@ -172,11 +201,16 @@ void CG_RFID::read_blocks(uint8_t offset, uint8_t len) {
     }
 }
 
-void CG_RFID::write_blocks() {
-    for(int i=0; i<2; i++) {
-        byte request[] = {WRITE_BLOCK, 0x05 + i, ORIG_BLOCKS[5+i][1], 0x00, 0x00, 0x00};
-        cr14_writeframe(request, 6);
-    }
+void CG_RFID::write_blocks(byte addr) {
+    byte request[] = {
+        WRITE_BLOCK,
+        addr,
+        ORIG_BLOCKS[addr][1],
+        ORIG_BLOCKS[addr][2],
+        ORIG_BLOCKS[addr][3],
+        ORIG_BLOCKS[addr][4]
+    };
+    cr14_writeframe(request, 6);
 }
 
 void CG_RFID::receive_event(int length) {
@@ -207,7 +241,10 @@ void CG_RFID::receive_event(int length) {
             response[4] = read_register[7];
             size = 0;
 
-            if(bypass) write_required = true;
+            if(bypass) {
+                write_required = 2;
+                refresh_step = 21; // wait a minute until all data transfers are completed
+            }
             break;
         case CG_RFID::AUTHENTICATE:
             size = 0;

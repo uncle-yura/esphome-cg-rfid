@@ -46,7 +46,7 @@ namespace esphome {
         };    
 
         uint8_t refresh_step = 0;
-        bool write_required = false;
+        uint8_t write_required = 0;
         uint8_t cycle_counter = 0;
 
         byte* response;
@@ -94,7 +94,7 @@ namespace esphome {
         void select_node();
         void read_uid();
         void read_blocks(uint8_t offset, uint8_t len);
-        void write_blocks();
+        void write_blocks(byte addr);
         void check_response(uint8_t err);
     };
 }
